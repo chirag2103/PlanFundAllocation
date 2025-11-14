@@ -1,23 +1,61 @@
 import express from 'express';
 import FundCycle from '../models/FundCycle.js';
-import Department from '../models/Department.js';
-import { authenticateToken } from '../middleware/auth.js';
-import { requireCoordinatorOrAdmin } from '../middleware/roleCheck.js';
+import { authenticateToken as authenticate } from '../middleware/auth.js';
 
 const router = express.Router();
 
-// Get all fund cycles
-router.get('/', authenticateToken, async (req, res) => {
-  try {
-    const { status, academicYear } = req.query;
-    const query = {};
+// Check for date overlap within same department
+const checkDateOverlap = async (
+  departmentId,
+  startDate,
+  endDate,
+  excludeCycleId = null
+) => {
+  const query = {
+    department: departmentId,
+    $or: [
+      // New cycle starts during existing cycle
+      { startDate: { $lte: endDate }, endDate: { $gte: startDate } },
+      // New cycle contains existing cycle
+      { startDate: { $gte: startDate }, endDate: { $lte: endDate } },
+    ],
+  };
 
-    if (status) query.status = status;
-    if (academicYear) query.academicYear = academicYear;
+  if (excludeCycleId) {
+    query._id = { $ne: excludeCycleId };
+  }
+
+  const overlappingCycles = await FundCycle.find(query);
+  return overlappingCycles.length > 0 ? overlappingCycles : null;
+};
+
+// Get cycles
+router.get('/', authenticate, async (req, res) => {
+  try {
+    const { status } = req.query;
+    let query = {};
+
+    // Faculty: only see cycles from their department that are active
+    if (req.user.role === 'faculty') {
+      query.department = req.user.department;
+      query.status = 'active'; // Faculty only see active cycles
+    }
+
+    // Coordinator: only see cycles they created (their department)
+    if (req.user.role === 'coordinator') {
+      query.department = req.user.department;
+    }
+
+    // Admin: see all cycles
+    // (no filter for admin)
+
+    if (status) {
+      query.status = status;
+    }
 
     const cycles = await FundCycle.find(query)
-      .populate('createdBy', 'name')
-      .populate('departmentBudgets.department', 'name code')
+      .populate('createdBy', 'name email')
+      .populate('department', 'name code budget')
       .sort({ createdAt: -1 });
 
     res.json(cycles);
@@ -26,15 +64,28 @@ router.get('/', authenticateToken, async (req, res) => {
   }
 });
 
-// Get cycle by ID
-router.get('/:id', authenticateToken, async (req, res) => {
+// Get single cycle
+router.get('/:id', authenticate, async (req, res) => {
   try {
     const cycle = await FundCycle.findById(req.params.id)
-      .populate('createdBy', 'name')
-      .populate('departmentBudgets.department', 'name code');
+      .populate('createdBy', 'name email')
+      .populate('department', 'name code budget');
 
     if (!cycle) {
       return res.status(404).json({ error: 'Cycle not found' });
+    }
+
+    // Check access permissions
+    if (req.user.role === 'faculty') {
+      if (cycle.department._id.toString() !== req.user.department.toString()) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+    }
+
+    if (req.user.role === 'coordinator') {
+      if (cycle.department._id.toString() !== req.user.department.toString()) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
     }
 
     res.json(cycle);
@@ -43,147 +94,265 @@ router.get('/:id', authenticateToken, async (req, res) => {
   }
 });
 
-// Create new fund cycle (coordinator/admin)
-router.post(
-  '/',
-  authenticateToken,
-  requireCoordinatorOrAdmin,
-  async (req, res) => {
-    try {
-      const {
-        name,
-        academicYear,
-        startDate,
-        endDate,
-        submissionDeadline,
-        reviewDeadline,
-        totalBudget,
-        departmentBudgets,
-        description,
-      } = req.body;
+// Create cycle (coordinator only, for their department)
+router.post('/', authenticate, async (req, res) => {
+  try {
+    // Only coordinator can create cycles
+    if (req.user.role !== 'coordinator') {
+      return res
+        .status(403)
+        .json({ error: 'Only coordinators can create cycles' });
+    }
 
-      // Validate dates
-      const start = new Date(startDate);
-      const end = new Date(endDate);
-      const submission = new Date(submissionDeadline);
-      const review = new Date(reviewDeadline);
+    const {
+      name,
+      academicYear,
+      startDate,
+      endDate,
+      allocatedBudget,
+      description,
+    } = req.body;
 
-      if (start >= end || submission >= review || submission <= start) {
-        return res.status(400).json({ error: 'Invalid date configuration' });
-      }
+    // Validate coordinator has department
+    if (!req.user.department) {
+      return res
+        .status(400)
+        .json({ error: 'Coordinator must have department assigned' });
+    }
 
-      // Validate budget allocation
-      const totalAllocated = departmentBudgets.reduce(
-        (sum, dept) => sum + dept.allocatedAmount,
-        0
-      );
-      if (totalAllocated > totalBudget) {
-        return res
-          .status(400)
-          .json({ error: 'Department budgets exceed total budget' });
-      }
+    // Validate dates
+    const start = new Date(startDate);
+    const end = new Date(endDate);
 
-      const cycle = new FundCycle({
-        name,
-        academicYear,
-        startDate: start,
-        endDate: end,
-        submissionDeadline: submission,
-        reviewDeadline: review,
-        totalBudget,
-        departmentBudgets,
-        createdBy: req.user._id,
-        description,
+    if (start >= end) {
+      return res
+        .status(400)
+        .json({ error: 'End date must be after start date' });
+    }
+
+    // Check for overlapping cycles in same department
+    const overlappingCycles = await checkDateOverlap(
+      req.user.department,
+      start,
+      end
+    );
+
+    if (overlappingCycles) {
+      return res.status(400).json({
+        error: 'Date range overlaps with existing cycle(s) in your department',
+        overlappingCycles: overlappingCycles.map((c) => ({
+          name: c.name,
+          startDate: c.startDate,
+          endDate: c.endDate,
+        })),
       });
-
-      await cycle.save();
-      await cycle.populate(['createdBy', 'departmentBudgets.department']);
-
-      res.status(201).json(cycle);
-    } catch (error) {
-      res.status(500).json({ error: error.message });
     }
+
+    // Create cycle
+    const cycle = new FundCycle({
+      name,
+      academicYear,
+      startDate: start,
+      endDate: end,
+      department: req.user.department,
+      allocatedBudget: parseFloat(allocatedBudget) || 0,
+      spentBudget: 0,
+      status: 'draft',
+      description,
+      createdBy: req.user._id,
+    });
+
+    await cycle.save();
+    await cycle.populate('department', 'name code budget');
+    await cycle.populate('createdBy', 'name email');
+
+    res.status(201).json(cycle);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
   }
-);
+});
 
-// Update fund cycle (coordinator/admin)
-router.put(
-  '/:id',
-  authenticateToken,
-  requireCoordinatorOrAdmin,
-  async (req, res) => {
-    try {
-      const cycle = await FundCycle.findById(req.params.id);
-      if (!cycle) {
-        return res.status(404).json({ error: 'Cycle not found' });
-      }
+// Update cycle (coordinator only)
+router.put('/:id', authenticate, async (req, res) => {
+  try {
+    if (req.user.role !== 'coordinator') {
+      return res
+        .status(403)
+        .json({ error: 'Only coordinators can update cycles' });
+    }
 
-      // Can't modify active cycles with submitted proposals
-      if (cycle.status === 'active') {
+    const cycle = await FundCycle.findById(req.params.id);
+    if (!cycle) {
+      return res.status(404).json({ error: 'Cycle not found' });
+    }
+
+    // Check ownership
+    if (cycle.createdBy.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ error: 'Can only update own cycles' });
+    }
+
+    // Can't edit active or closed cycles
+    if (cycle.status !== 'draft') {
+      return res.status(400).json({ error: 'Can only edit draft cycles' });
+    }
+
+    const {
+      name,
+      academicYear,
+      startDate,
+      endDate,
+      allocatedBudget,
+      description,
+    } = req.body;
+
+    // Update fields
+    if (name) cycle.name = name;
+    if (academicYear) cycle.academicYear = academicYear;
+    if (description !== undefined) cycle.description = description;
+    if (allocatedBudget !== undefined)
+      cycle.allocatedBudget = parseFloat(allocatedBudget);
+
+    // If dates are being updated, check for overlaps
+    if (startDate || endDate) {
+      const newStart = startDate ? new Date(startDate) : cycle.startDate;
+      const newEnd = endDate ? new Date(endDate) : cycle.endDate;
+
+      if (newStart >= newEnd) {
         return res
           .status(400)
-          .json({ error: 'Cannot modify active cycle with proposals' });
+          .json({ error: 'End date must be after start date' });
       }
 
-      const updatedCycle = await FundCycle.findByIdAndUpdate(
-        req.params.id,
-        req.body,
-        { new: true, runValidators: true }
-      ).populate(['createdBy', 'departmentBudgets.department']);
-
-      res.json(updatedCycle);
-    } catch (error) {
-      res.status(500).json({ error: error.message });
-    }
-  }
-);
-
-// Activate fund cycle (coordinator/admin)
-router.patch(
-  '/:id/activate',
-  authenticateToken,
-  requireCoordinatorOrAdmin,
-  async (req, res) => {
-    try {
-      const cycle = await FundCycle.findByIdAndUpdate(
-        req.params.id,
-        { status: 'active' },
-        { new: true }
+      // Check overlaps (excluding current cycle)
+      const overlappingCycles = await checkDateOverlap(
+        cycle.department,
+        newStart,
+        newEnd,
+        cycle._id
       );
 
-      if (!cycle) {
-        return res.status(404).json({ error: 'Cycle not found' });
+      if (overlappingCycles) {
+        return res.status(400).json({
+          error: 'Date range overlaps with existing cycle(s)',
+          overlappingCycles: overlappingCycles.map((c) => ({
+            name: c.name,
+            startDate: c.startDate,
+            endDate: c.endDate,
+          })),
+        });
       }
 
-      res.json(cycle);
-    } catch (error) {
-      res.status(500).json({ error: error.message });
+      cycle.startDate = newStart;
+      cycle.endDate = newEnd;
     }
+
+    await cycle.save();
+    await cycle.populate('department', 'name code budget');
+    await cycle.populate('createdBy', 'name email');
+
+    res.json(cycle);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
   }
-);
+});
 
-// Close fund cycle (coordinator/admin)
-router.patch(
-  '/:id/close',
-  authenticateToken,
-  requireCoordinatorOrAdmin,
-  async (req, res) => {
-    try {
-      const cycle = await FundCycle.findByIdAndUpdate(
-        req.params.id,
-        { status: 'closed' },
-        { new: true }
-      );
-
-      if (!cycle) {
-        return res.status(404).json({ error: 'Cycle not found' });
-      }
-
-      res.json(cycle);
-    } catch (error) {
-      res.status(500).json({ error: error.message });
+// Activate cycle (coordinator only)
+router.patch('/:id/activate', authenticate, async (req, res) => {
+  try {
+    if (req.user.role !== 'coordinator') {
+      return res
+        .status(403)
+        .json({ error: 'Only coordinators can activate cycles' });
     }
+
+    const cycle = await FundCycle.findById(req.params.id);
+    if (!cycle) {
+      return res.status(404).json({ error: 'Cycle not found' });
+    }
+
+    // Check ownership
+    if (cycle.createdBy.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ error: 'Can only activate own cycles' });
+    }
+
+    if (cycle.status === 'active') {
+      return res.status(400).json({ error: 'Cycle is already active' });
+    }
+
+    if (cycle.status === 'closed') {
+      return res.status(400).json({ error: 'Cannot activate closed cycle' });
+    }
+
+    cycle.status = 'active';
+    await cycle.save();
+
+    res.json(cycle);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
   }
-);
+});
+
+// Close cycle (coordinator only)
+router.patch('/:id/close', authenticate, async (req, res) => {
+  try {
+    if (req.user.role !== 'coordinator') {
+      return res
+        .status(403)
+        .json({ error: 'Only coordinators can close cycles' });
+    }
+
+    const cycle = await FundCycle.findById(req.params.id);
+    if (!cycle) {
+      return res.status(404).json({ error: 'Cycle not found' });
+    }
+
+    // Check ownership
+    if (cycle.createdBy.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ error: 'Can only close own cycles' });
+    }
+
+    if (cycle.status === 'closed') {
+      return res.status(400).json({ error: 'Cycle is already closed' });
+    }
+
+    cycle.status = 'closed';
+    await cycle.save();
+
+    res.json(cycle);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Delete cycle (coordinator only, draft only)
+router.delete('/:id', authenticate, async (req, res) => {
+  try {
+    if (req.user.role !== 'coordinator') {
+      return res
+        .status(403)
+        .json({ error: 'Only coordinators can delete cycles' });
+    }
+
+    const cycle = await FundCycle.findById(req.params.id);
+    if (!cycle) {
+      return res.status(404).json({ error: 'Cycle not found' });
+    }
+
+    // Check ownership
+    if (cycle.createdBy.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ error: 'Can only delete own cycles' });
+    }
+
+    // Can only delete draft cycles
+    if (cycle.status !== 'draft') {
+      return res.status(400).json({ error: 'Can only delete draft cycles' });
+    }
+
+    await FundCycle.findByIdAndDelete(req.params.id);
+    res.json({ message: 'Cycle deleted successfully' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
 
 export default router;

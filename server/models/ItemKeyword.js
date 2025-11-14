@@ -5,23 +5,22 @@ const itemKeywordSchema = new mongoose.Schema(
     name: {
       type: String,
       required: true,
+      unique: true,
       trim: true,
     },
     category: {
       type: String,
-      required: true,
       enum: ['equipment', 'software', 'consumables', 'furniture', 'other'],
+      required: true,
     },
     description: {
       type: String,
+      trim: true,
     },
     department: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Department',
-    },
-    estimatedCost: {
-      min: Number,
-      max: Number,
+      required: true,
     },
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
@@ -33,12 +32,7 @@ const itemKeywordSchema = new mongoose.Schema(
       default: true,
     },
   },
-  {
-    timestamps: true,
-  }
+  { timestamps: true }
 );
-
-// Compound index for name and department
-itemKeywordSchema.index({ name: 1, department: 1 }, { unique: true });
 
 export default mongoose.model('ItemKeyword', itemKeywordSchema);

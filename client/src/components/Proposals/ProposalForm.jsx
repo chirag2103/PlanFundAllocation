@@ -1,11 +1,14 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useForm, useFieldArray } from 'react-hook-form';
 import { useQuery } from '@tanstack/react-query';
 import api from '../../utils/api';
+import { useAuth } from '../../context/AuthContext';
 import Button from '../common/Button';
 import toast from 'react-hot-toast';
 
 const ProposalForm = ({ proposal, onSubmit, onCancel, isLoading }) => {
+  const { user } = useAuth();
+
   const {
     register,
     control,
@@ -14,22 +17,26 @@ const ProposalForm = ({ proposal, onSubmit, onCancel, isLoading }) => {
     watch,
     reset,
   } = useForm({
-    mode: 'onChange', // Validate on change for better UX
-    defaultValues: proposal
-      ? {
-          fundCycle: proposal.fundCycle?._id || '',
-          items: proposal.items || [
-            { itemKeyword: '', quantity: 1, unitCost: 0, justification: '' },
-          ],
-          priority: proposal.priority || 'medium',
-        }
-      : {
-          fundCycle: '',
-          items: [
-            { itemKeyword: '', quantity: 1, unitCost: 0, justification: '' },
-          ],
-          priority: 'medium',
-        },
+    mode: 'onChange',
+    defaultValues:
+      proposal && proposal.items
+        ? {
+            fundCycle: proposal.fundCycle?._id || '',
+            items: proposal.items.map((item) => ({
+              itemKeyword: item.itemKeyword?._id || item.itemKeyword || '', // Handle both populated and unpopulated
+              quantity: item.quantity || 1,
+              unitCost: item.unitCost || 0,
+              justification: item.justification || '',
+            })),
+            priority: proposal.priority || 'medium',
+          }
+        : {
+            fundCycle: '',
+            items: [
+              { itemKeyword: '', quantity: 1, unitCost: 0, justification: '' },
+            ],
+            priority: 'medium',
+          },
   });
 
   const { fields, append, remove } = useFieldArray({
@@ -40,13 +47,14 @@ const ProposalForm = ({ proposal, onSubmit, onCancel, isLoading }) => {
   const { data: cycles, isLoading: cyclesLoading } = useQuery({
     queryKey: ['fund-cycles-active'],
     queryFn: () => api.get('/api/cycles?status=active').then((res) => res.data),
-    staleTime: 1000 * 60 * 5, // 5 minutes
+    staleTime: 1000 * 60 * 5,
   });
 
+  // UPDATED: Fetch items with department filter
   const { data: items, isLoading: itemsLoading } = useQuery({
-    queryKey: ['item-keywords'],
+    queryKey: ['item-keywords', user?.department],
     queryFn: () => api.get('/api/item-keywords').then((res) => res.data),
-    staleTime: 1000 * 60 * 5, // 5 minutes
+    staleTime: 1000 * 60 * 5,
   });
 
   const itemsArray = watch('items');
@@ -59,9 +67,8 @@ const ProposalForm = ({ proposal, onSubmit, onCancel, isLoading }) => {
   }, 0);
 
   const onFormSubmit = async (data) => {
-    console.log('Form submitted with data:', data); // DEBUG
+    console.log('Form submitted with data:', data);
 
-    // Validation checks
     if (!data.fundCycle) {
       toast.error('Please select a fund cycle');
       return;
@@ -72,9 +79,8 @@ const ProposalForm = ({ proposal, onSubmit, onCancel, isLoading }) => {
       return;
     }
 
-    // Validate all items have required fields
     const validItems = data.items.every((item, idx) => {
-      console.log(`Item ${idx}:`, item); // DEBUG
+      console.log(`Item ${idx}:`, item);
       return (
         item.itemKeyword &&
         item.quantity &&
@@ -106,10 +112,10 @@ const ProposalForm = ({ proposal, onSubmit, onCancel, isLoading }) => {
         priority: data.priority,
       };
 
-      console.log('Submitting:', submitData); // DEBUG
+      console.log('Submitting:', submitData);
       await onSubmit(submitData);
     } catch (error) {
-      console.error('Error submitting form:', error); // DEBUG
+      console.error('Error submitting form:', error);
       toast.error(error.message || 'Failed to save proposal');
     }
   };
@@ -191,142 +197,179 @@ const ProposalForm = ({ proposal, onSubmit, onCancel, isLoading }) => {
           </p>
         ) : !items || items.length === 0 ? (
           <p style={{ color: 'var(--danger)', fontSize: '0.9rem' }}>
-            ⚠️ No items available. Contact admin.
+            ⚠️ No items available for your department. Contact admin.
           </p>
         ) : (
-          fields.map((field, index) => (
-            <div
-              key={field.id}
-              style={{
-                display: 'grid',
-                gridTemplateColumns: '2fr 1fr 1fr 2fr 1fr auto',
-                gap: '10px',
-                marginBottom: '10px',
-                padding: '10px',
-                backgroundColor: 'var(--secondary)',
-                borderRadius: 'var(--radius)',
-                alignItems: 'center',
-              }}
-            >
-              {/* Item Keyword */}
-              <div>
-                <select
-                  className={`form-control ${
-                    errors.items?.[index]?.itemKeyword
-                      ? 'form-control-error'
-                      : ''
-                  }`}
-                  {...register(`items.${index}.itemKeyword`, {
-                    required: 'Select item',
-                  })}
-                >
-                  <option value=''>-- Select Item --</option>
-                  {items?.map((item) => (
-                    <option key={item._id} value={item._id}>
-                      {item.name}
-                    </option>
-                  ))}
-                </select>
-                {errors.items?.[index]?.itemKeyword && (
-                  <span className='form-error' style={{ fontSize: '0.75rem' }}>
-                    {errors.items[index].itemKeyword.message}
-                  </span>
-                )}
-              </div>
+          fields.map((field, index) => {
+            // Get selected item to show if it's selected
+            const selectedItemId = watch(`items.${index}.itemKeyword`);
+            const selectedItem = items?.find(
+              (item) => item._id === selectedItemId
+            );
 
-              {/* Quantity */}
-              <div>
-                <input
-                  type='number'
-                  className={`form-control ${
-                    errors.items?.[index]?.quantity ? 'form-control-error' : ''
-                  }`}
-                  placeholder='Qty'
-                  min='1'
-                  {...register(`items.${index}.quantity`, {
-                    required: 'Qty required',
-                    min: { value: 1, message: 'Min 1' },
-                  })}
-                />
-                {errors.items?.[index]?.quantity && (
-                  <span className='form-error' style={{ fontSize: '0.75rem' }}>
-                    {errors.items[index].quantity.message}
-                  </span>
-                )}
-              </div>
-
-              {/* Unit Cost */}
-              <div>
-                <input
-                  type='number'
-                  className={`form-control ${
-                    errors.items?.[index]?.unitCost ? 'form-control-error' : ''
-                  }`}
-                  placeholder='Cost'
-                  step='0.01'
-                  {...register(`items.${index}.unitCost`, {
-                    required: 'Cost required',
-                    min: { value: 0, message: 'Min 0' },
-                  })}
-                />
-                {errors.items?.[index]?.unitCost && (
-                  <span className='form-error' style={{ fontSize: '0.75rem' }}>
-                    {errors.items[index].unitCost.message}
-                  </span>
-                )}
-              </div>
-
-              {/* Justification */}
-              <div>
-                <input
-                  type='text'
-                  className={`form-control ${
-                    errors.items?.[index]?.justification
-                      ? 'form-control-error'
-                      : ''
-                  }`}
-                  placeholder='Why needed?'
-                  {...register(`items.${index}.justification`, {
-                    required: 'Justification required',
-                  })}
-                />
-                {errors.items?.[index]?.justification && (
-                  <span className='form-error' style={{ fontSize: '0.75rem' }}>
-                    {errors.items[index].justification.message}
-                  </span>
-                )}
-              </div>
-
-              {/* Total */}
+            return (
               <div
+                key={field.id}
                 style={{
-                  padding: '8px',
-                  backgroundColor: 'white',
+                  display: 'grid',
+                  gridTemplateColumns: '2fr 1fr 1fr 2fr 1fr auto',
+                  gap: '10px',
+                  marginBottom: '10px',
+                  padding: '10px',
+                  backgroundColor: 'var(--secondary)',
                   borderRadius: 'var(--radius)',
-                  border: '1px solid var(--border)',
-                  fontSize: '0.9rem',
-                  fontWeight: 'bold',
-                  textAlign: 'center',
+                  alignItems: 'center',
                 }}
               >
-                ₹
-                {(
-                  (parseInt(watch(`items.${index}.quantity`)) || 0) *
-                  (parseFloat(watch(`items.${index}.unitCost`)) || 0)
-                ).toLocaleString('en-IN')}
-              </div>
+                {/* Item Keyword - FIXED: Auto-select and show selected value */}
+                <div>
+                  <select
+                    className={`form-control ${
+                      errors.items?.[index]?.itemKeyword
+                        ? 'form-control-error'
+                        : ''
+                    }`}
+                    {...register(`items.${index}.itemKeyword`, {
+                      required: 'Select item',
+                    })}
+                    value={selectedItemId}
+                  >
+                    <option value=''>-- Select Item --</option>
+                    {items?.map((item) => (
+                      <option key={item._id} value={item._id}>
+                        {item.name}
+                      </option>
+                    ))}
+                  </select>
+                  {/* Show selected item name */}
+                  {/* {selectedItem && (
+                    <p
+                      style={{
+                        fontSize: '0.75rem',
+                        color: 'var(--text-light)',
+                        margin: '3px 0 0 0',
+                      }}
+                    >
+                      ✓ {selectedItem.name}
+                    </p>
+                  )} */}
+                  {errors.items?.[index]?.itemKeyword && (
+                    <span
+                      className='form-error'
+                      style={{ fontSize: '0.75rem' }}
+                    >
+                      {errors.items[index].itemKeyword.message}
+                    </span>
+                  )}
+                </div>
 
-              {/* Remove Button */}
-              <Button
-                variant='danger'
-                size='small'
-                type='button'
-                onClick={() => remove(index)}
-              >
-                ✕
-              </Button>
-            </div>
-          ))
+                {/* Quantity */}
+                <div>
+                  <input
+                    type='number'
+                    className={`form-control ${
+                      errors.items?.[index]?.quantity
+                        ? 'form-control-error'
+                        : ''
+                    }`}
+                    placeholder='Qty'
+                    min='1'
+                    {...register(`items.${index}.quantity`, {
+                      required: 'Qty required',
+                      min: { value: 1, message: 'Min 1' },
+                    })}
+                  />
+                  {errors.items?.[index]?.quantity && (
+                    <span
+                      className='form-error'
+                      style={{ fontSize: '0.75rem' }}
+                    >
+                      {errors.items[index].quantity.message}
+                    </span>
+                  )}
+                </div>
+
+                {/* Unit Cost */}
+                <div>
+                  <input
+                    type='number'
+                    className={`form-control ${
+                      errors.items?.[index]?.unitCost
+                        ? 'form-control-error'
+                        : ''
+                    }`}
+                    placeholder='Cost'
+                    step='0.01'
+                    {...register(`items.${index}.unitCost`, {
+                      required: 'Cost required',
+                      min: { value: 0, message: 'Min 0' },
+                    })}
+                  />
+                  {errors.items?.[index]?.unitCost && (
+                    <span
+                      className='form-error'
+                      style={{ fontSize: '0.75rem' }}
+                    >
+                      {errors.items[index].unitCost.message}
+                    </span>
+                  )}
+                </div>
+
+                {/* Justification */}
+                <div>
+                  <input
+                    type='text'
+                    className={`form-control ${
+                      errors.items?.[index]?.justification
+                        ? 'form-control-error'
+                        : ''
+                    }`}
+                    placeholder='Why needed?'
+                    {...register(`items.${index}.justification`, {
+                      required: 'Justification required',
+                    })}
+                  />
+                  {errors.items?.[index]?.justification && (
+                    <span
+                      className='form-error'
+                      style={{ fontSize: '0.75rem' }}
+                    >
+                      {errors.items[index].justification.message}
+                    </span>
+                  )}
+                </div>
+
+                {/* Total */}
+                <div
+                  style={{
+                    padding: '8px',
+                    backgroundColor: 'white',
+                    borderRadius: 'var(--radius)',
+                    border: '1px solid var(--border)',
+                    fontSize: '0.9rem',
+                    fontWeight: 'bold',
+                    textAlign: 'center',
+                  }}
+                >
+                  ₹
+                  {(
+                    (parseInt(watch(`items.${index}.quantity`)) || 0) *
+                    (parseFloat(watch(`items.${index}.unitCost`)) || 0)
+                  ).toLocaleString('en-IN')}
+                </div>
+
+                {/* Remove Button */}
+                <Button
+                  variant='danger'
+                  size='small'
+                  type='button'
+                  onClick={() => remove(index)}
+                >
+                  ✕
+                </Button>
+              </div>
+            );
+          })
         )}
       </div>
 

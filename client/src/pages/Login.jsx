@@ -22,7 +22,7 @@ const Login = () => {
         </button>
 
         <div className='login-footer'>
-          <p>© 2024 NIT Calicut. All rights reserved.</p>
+          <p>© 2025 NIT Calicut. All rights reserved.</p>
         </div>
       </div>
     </div>

@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../../utils/api';
 import Card from '../common/Card';
-import Table from '../common/Table';
 import Badge from '../common/Badge';
 import Button from '../common/Button';
 import toast from 'react-hot-toast';
@@ -71,19 +70,6 @@ const CycleList = ({ status = 'all', onEdit, onSelectCycle }) => {
 
   const toggleExpand = (cycleId) => {
     setExpandedCycle(expandedCycle === cycleId ? null : cycleId);
-  };
-
-  const getStatusColor = (status) => {
-    switch (status) {
-      case 'active':
-        return '#28a745';
-      case 'draft':
-        return '#ffc107';
-      case 'closed':
-        return '#6c757d';
-      default:
-        return '#007bff';
-    }
   };
 
   if (error) {
@@ -175,6 +161,16 @@ const CycleList = ({ status = 'all', onEdit, onSelectCycle }) => {
               >
                 📅 Academic Year: {cycle.academicYear}
               </p>
+              <p
+                style={{
+                  margin: '5px 0',
+                  color: 'var(--text-light)',
+                  fontSize: '0.9rem',
+                }}
+              >
+                🏢 Department: {cycle.department?.name} (
+                {cycle.department?.code})
+              </p>
             </div>
             <div style={{ textAlign: 'right' }}>
               <div
@@ -184,16 +180,17 @@ const CycleList = ({ status = 'all', onEdit, onSelectCycle }) => {
                   color: 'var(--primary)',
                 }}
               >
-                ₹{(cycle.totalBudget / 100000).toFixed(2)}L
+                ₹{((cycle.allocatedBudget || 0) / 100000).toFixed(2)}L
               </div>
               <p
                 style={{
                   margin: '5px 0',
                   color: 'var(--text-light)',
+
                   fontSize: '0.85rem',
                 }}
               >
-                Total Budget
+                Allocated Budget
               </p>
             </div>
           </div>
@@ -235,40 +232,54 @@ const CycleList = ({ status = 'all', onEdit, onSelectCycle }) => {
                         color: 'var(--text-light)',
                         fontSize: '0.85rem',
                       }}
-                    ></div>
+                    >
+                      Duration:{' '}
+                      {Math.ceil(
+                        (new Date(cycle.endDate) - new Date(cycle.startDate)) /
+                          (1000 * 60 * 60 * 24)
+                      )}{' '}
+                      days
+                    </div>
                   </div>
                 </div>
 
                 {/* Budget Summary */}
                 <div>
                   <h4 style={{ margin: '0 0 10px 0', color: 'var(--text)' }}>
-                    💰 Budget Allocation
+                    💰 Budget Summary
                   </h4>
                   <div style={{ fontSize: '0.9rem', lineHeight: '1.8' }}>
                     <div>
-                      <strong>Total:</strong> ₹
-                      {(cycle.totalBudget / 100000).toFixed(2)}L
+                      <strong>Allocated:</strong> ₹
+                      {((cycle.allocatedBudget || 0) / 100000).toFixed(2)}L
                     </div>
                     <div>
-                      <strong>Departments:</strong>{' '}
-                      {cycle.departmentBudgets?.length || 0}
+                      <strong>Spent:</strong> ₹
+                      {((cycle.spentBudget || 0) / 100000).toFixed(2)}L
+                    </div>
+                    <div>
+                      <strong>Remaining:</strong> ₹
+                      {(
+                        ((cycle.allocatedBudget || 0) -
+                          (cycle.spentBudget || 0)) /
+                        100000
+                      ).toFixed(2)}
+                      L
                     </div>
                     <div
                       style={{
-                        marginTop: '8px',
+                        marginTop: '10px',
                         color: 'var(--text-light)',
                         fontSize: '0.85rem',
                       }}
                     >
-                      {cycle.departmentBudgets?.slice(0, 3).map((db, idx) => (
-                        <div key={idx}>
-                          {db.department?.name || 'Department'}: ₹
-                          {(db.allocatedAmount / 100000).toFixed(2)}L
-                        </div>
-                      ))}
-                      {cycle.departmentBudgets?.length > 3 && (
-                        <div>+{cycle.departmentBudgets.length - 3} more</div>
-                      )}
+                      Utilization:{' '}
+                      {(
+                        ((cycle.spentBudget || 0) /
+                          (cycle.allocatedBudget || 1)) *
+                        100
+                      ).toFixed(1)}
+                      %
                     </div>
                   </div>
                 </div>
@@ -292,87 +303,162 @@ const CycleList = ({ status = 'all', onEdit, onSelectCycle }) => {
                 </div>
               )}
 
-              {/* Department Budgets Table */}
+              {/* Budget Details */}
               <div style={{ marginTop: '15px' }}>
                 <h4 style={{ margin: '0 0 10px 0', color: 'var(--text)' }}>
-                  Department Budget Breakdown
+                  📊 Budget Breakdown
                 </h4>
-                <div style={{ overflowX: 'auto' }}>
-                  <table className='table' style={{ fontSize: '0.9rem' }}>
-                    <thead>
-                      <tr>
-                        <th>Department</th>
-                        <th>Allocated</th>
-                        <th>Spent</th>
-                        <th>Remaining</th>
-                        <th>Utilization</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {cycle.departmentBudgets?.map((db, idx) => {
-                        const utilized =
-                          db.allocatedAmount -
-                          (cycle.totalBudget - db.allocatedAmount);
-                        const utilizationRate = (
-                          (db.spentAmount / db.allocatedAmount) *
-                          100
-                        ).toFixed(1);
-                        return (
-                          <tr key={idx}>
-                            <td>{db.department?.name || 'Unknown'}</td>
-                            <td>
-                              ₹{(db.allocatedAmount / 100000).toFixed(2)}L
-                            </td>
-                            <td>₹{(db.spentAmount / 100000).toFixed(2)}L</td>
-                            <td>
-                              ₹
-                              {(
-                                (db.allocatedAmount - db.spentAmount) /
-                                100000
-                              ).toFixed(2)}
-                              L
-                            </td>
-                            <td>
-                              <div
-                                style={{
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  gap: '5px',
-                                }}
-                              >
-                                <div
-                                  style={{
-                                    width: '60px',
-                                    height: '6px',
-                                    backgroundColor: '#e0e0e0',
-                                    borderRadius: '3px',
-                                    overflow: 'hidden',
-                                  }}
-                                >
-                                  <div
-                                    style={{
-                                      height: '100%',
-                                      width: `${Math.min(
-                                        utilizationRate,
-                                        100
-                                      )}%`,
-                                      backgroundColor:
-                                        utilizationRate > 80
-                                          ? '#ff9800'
-                                          : '#28a745',
-                                    }}
-                                  ></div>
-                                </div>
-                                <span style={{ fontSize: '0.8rem' }}>
-                                  {utilizationRate}%
-                                </span>
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+                <div
+                  style={{
+                    backgroundColor: 'var(--secondary)',
+                    padding: '15px',
+                    borderRadius: 'var(--radius)',
+                  }}
+                >
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: '1fr 1fr',
+                      gap: '15px',
+                      fontSize: '0.9rem',
+                    }}
+                  >
+                    {/* Allocated */}
+                    <div>
+                      <p
+                        style={{
+                          margin: '0 0 5px 0',
+                          color: 'var(--text-light)',
+                        }}
+                      >
+                        Total Allocated
+                      </p>
+                      <p
+                        style={{
+                          margin: 0,
+                          fontSize: '1.1rem',
+                          fontWeight: 'bold',
+                          color: 'var(--primary)',
+                        }}
+                      >
+                        ₹{((cycle.allocatedBudget || 0) / 100000).toFixed(2)}L
+                      </p>
+                    </div>
+
+                    {/* Spent */}
+                    <div>
+                      <p
+                        style={{
+                          margin: '0 0 5px 0',
+                          color: 'var(--text-light)',
+                        }}
+                      >
+                        Amount Spent
+                      </p>
+                      <p
+                        style={{
+                          margin: 0,
+                          fontSize: '1.1rem',
+                          fontWeight: 'bold',
+                          color: '#ff9800',
+                        }}
+                      >
+                        ₹{((cycle.spentBudget || 0) / 100000).toFixed(2)}L
+                      </p>
+                    </div>
+
+                    {/* Remaining */}
+                    <div>
+                      <p
+                        style={{
+                          margin: '0 0 5px 0',
+                          color: 'var(--text-light)',
+                        }}
+                      >
+                        Remaining Budget
+                      </p>
+                      <p
+                        style={{
+                          margin: 0,
+                          fontSize: '1.1rem',
+                          fontWeight: 'bold',
+                          color: '#28a745',
+                        }}
+                      >
+                        ₹
+                        {(
+                          ((cycle.allocatedBudget || 0) -
+                            (cycle.spentBudget || 0)) /
+                          100000
+                        ).toFixed(2)}
+                        L
+                      </p>
+                    </div>
+
+                    {/* Utilization */}
+                    <div>
+                      <p
+                        style={{
+                          margin: '0 0 5px 0',
+                          color: 'var(--text-light)',
+                        }}
+                      >
+                        Utilization Rate
+                      </p>
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '8px',
+                        }}
+                      >
+                        <div
+                          style={{
+                            flex: 1,
+                            height: '8px',
+                            backgroundColor: '#e0e0e0',
+                            borderRadius: '4px',
+                            overflow: 'hidden',
+                          }}
+                        >
+                          <div
+                            style={{
+                              height: '100%',
+                              width: `${Math.min(
+                                (
+                                  ((cycle.spentBudget || 0) /
+                                    (cycle.allocatedBudget || 1)) *
+                                  100
+                                ).toFixed(1),
+                                100
+                              )}%`,
+                              backgroundColor:
+                                (
+                                  ((cycle.spentBudget || 0) /
+                                    (cycle.allocatedBudget || 1)) *
+                                  100
+                                ).toFixed(1) > 80
+                                  ? '#ff9800'
+                                  : '#28a745',
+                            }}
+                          ></div>
+                        </div>
+                        <span
+                          style={{
+                            fontWeight: 'bold',
+                            minWidth: '40px',
+                          }}
+                        >
+                          {(
+                            ((cycle.spentBudget || 0) /
+                              (cycle.allocatedBudget || 1)) *
+                            100
+                          ).toFixed(1)}
+                          %
+                        </span>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>

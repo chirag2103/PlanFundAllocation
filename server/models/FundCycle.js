@@ -19,58 +19,38 @@ const fundCycleSchema = new mongoose.Schema(
       type: Date,
       required: true,
     },
-    submissionDeadline: {
-      type: Date,
+    // Single department per cycle (coordinator's department)
+    department: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Department',
       required: true,
     },
-    reviewDeadline: {
-      type: Date,
-      required: true,
-    },
-    totalBudget: {
+    allocatedBudget: {
       type: Number,
       required: true,
-      min: 0,
+      default: 0,
+    },
+    spentBudget: {
+      type: Number,
+      default: 0,
     },
     status: {
       type: String,
-      enum: ['active', 'closed', 'draft'],
+      enum: ['draft', 'active', 'closed'],
       default: 'draft',
     },
-    departmentBudgets: [
-      {
-        department: {
-          type: mongoose.Schema.Types.ObjectId,
-          ref: 'Department',
-          required: true,
-        },
-        allocatedAmount: {
-          type: Number,
-          required: true,
-          min: 0,
-        },
-        spentAmount: {
-          type: Number,
-          default: 0,
-          min: 0,
-        },
-      },
-    ],
+    description: String,
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
       required: true,
     },
-    description: {
-      type: String,
-    },
   },
-  {
-    timestamps: true,
-  }
+  { timestamps: true }
 );
 
-// Index for active cycles
-fundCycleSchema.index({ status: 1, academicYear: 1 });
+// Index for efficient queries
+fundCycleSchema.index({ department: 1, startDate: 1, endDate: 1 });
+fundCycleSchema.index({ status: 1 });
 
 export default mongoose.model('FundCycle', fundCycleSchema);

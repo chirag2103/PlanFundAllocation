@@ -197,7 +197,7 @@ const ProposalList = ({
               )}
 
               {proposal.status === 'submitted' &&
-                (userRole === 'coordinator' || userRole === 'admin') && (
+                userRole === 'coordinator' && (
                   <Button
                     variant='primary'
                     size='small'

@@ -36,7 +36,7 @@ const Navigation = () => {
       path: '/items',
       label: 'Item Management',
       icon: FiSettings,
-      roles: ['coordinator', 'admin'],
+      roles: ['admin'],
     },
     {
       path: '/reports',
@@ -49,6 +49,12 @@ const Navigation = () => {
       label: 'Profile',
       icon: FiUser,
       roles: ['faculty', 'coordinator', 'admin'],
+    },
+    {
+      path: '/users',
+      label: 'Manage Users',
+      icon: FiUser,
+      roles: ['admin'],
     },
   ];
 

@@ -8,7 +8,7 @@ const DepartmentReports = ({ stats, departments, currentDepartment }) => {
 
   // If coordinator, show only their department
   if (currentDepartment) {
-    displayStats = Object.keys(stats)
+    displayStats = Object.keys(stats || {})
       .filter((key) => {
         const dept = departments.find((d) => d._id === key);
         return dept && dept._id === currentDepartment;
@@ -20,8 +20,18 @@ const DepartmentReports = ({ stats, departments, currentDepartment }) => {
   }
 
   const sortedStats = Object.values(displayStats || {}).sort(
-    (a, b) => b.totalApproved - a.totalApproved
+    (a, b) => (b.totalApproved || 0) - (a.totalApproved || 0)
   );
+
+  if (!sortedStats || sortedStats.length === 0) {
+    return (
+      <Card title='Department Reports'>
+        <p style={{ textAlign: 'center', color: 'var(--text-light)' }}>
+          No data available
+        </p>
+      </Card>
+    );
+  }
 
   return (
     <div>
@@ -57,10 +67,10 @@ const DepartmentReports = ({ stats, departments, currentDepartment }) => {
                       {dept.approvedProposals}
                     </Badge>
                   </td>
-                  <td>₹{(dept.budget / 100000).toFixed(2)}L</td>
-                  <td>₹{(dept.totalRequested / 100000).toFixed(2)}L</td>
+                  <td>₹{((dept.budget || 0) / 100000).toFixed(2)}L</td>
+                  <td>₹{((dept.totalRequested || 0) / 100000).toFixed(2)}L</td>
                   <td style={{ fontWeight: 'bold', color: 'var(--primary)' }}>
-                    ₹{(dept.totalApproved / 100000).toFixed(2)}L
+                    ₹{((dept.totalApproved || 0) / 100000).toFixed(2)}L
                   </td>
                   <td>
                     <div
@@ -82,14 +92,19 @@ const DepartmentReports = ({ stats, departments, currentDepartment }) => {
                         <div
                           style={{
                             height: '100%',
-                            width: `${Math.min(dept.utilizationRate, 100)}%`,
+                            width: `${Math.min(
+                              Number(dept.utilizationRate || 0),
+                              100
+                            )}%`,
                             backgroundColor:
-                              dept.utilizationRate > 80 ? '#ff9800' : '#28a745',
+                              Number(dept.utilizationRate || 0) > 80
+                                ? '#ff9800'
+                                : '#28a745',
                           }}
                         ></div>
                       </div>
                       <span style={{ fontSize: '0.85rem', fontWeight: '600' }}>
-                        {dept.utilizationRate}%
+                        {Number(dept.utilizationRate || 0).toFixed(1)}%
                       </span>
                     </div>
                   </td>
@@ -161,7 +176,7 @@ const DepartmentReports = ({ stats, departments, currentDepartment }) => {
                 }}
               >
                 <span>Budget Allocated:</span>
-                <strong>₹{(dept.budget / 100000).toFixed(2)}L</strong>
+                <strong>₹{((dept.budget || 0) / 100000).toFixed(2)}L</strong>
               </div>
 
               <div
@@ -173,7 +188,9 @@ const DepartmentReports = ({ stats, departments, currentDepartment }) => {
                 }}
               >
                 <span>Budget Requested:</span>
-                <strong>₹{(dept.totalRequested / 100000).toFixed(2)}L</strong>
+                <strong>
+                  ₹{((dept.totalRequested || 0) / 100000).toFixed(2)}L
+                </strong>
               </div>
 
               <div
@@ -186,7 +203,7 @@ const DepartmentReports = ({ stats, departments, currentDepartment }) => {
               >
                 <span>Budget Approved:</span>
                 <strong style={{ color: 'var(--primary)' }}>
-                  ₹{(dept.totalApproved / 100000).toFixed(2)}L
+                  ₹{((dept.totalApproved || 0) / 100000).toFixed(2)}L
                 </strong>
               </div>
 
@@ -203,10 +220,13 @@ const DepartmentReports = ({ stats, departments, currentDepartment }) => {
                 <span>Utilization Rate:</span>
                 <strong
                   style={{
-                    color: dept.utilizationRate > 80 ? '#ff9800' : '#28a745',
+                    color:
+                      Number(dept.utilizationRate || 0) > 80
+                        ? '#ff9800'
+                        : '#28a745',
                   }}
                 >
-                  {dept.utilizationRate}%
+                  {Number(dept.utilizationRate || 0).toFixed(1)}%
                 </strong>
               </div>
             </div>

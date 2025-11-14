@@ -4,8 +4,10 @@ import api from '../../utils/api';
 import Card from '../common/Card';
 import DashboardCard from './DashboardCard';
 import { FiUsers, FiFileText, FiDatabase, FiTrendingUp } from 'react-icons/fi';
+import { useNavigate } from 'react-router-dom';
 
 const AdminDashboard = () => {
+  const navigate = useNavigate();
   const { data: users } = useQuery({
     queryKey: ['all-users'],
     queryFn: () => api.get('/api/users').then((res) => res.data),
@@ -67,9 +69,30 @@ const AdminDashboard = () => {
         <div className='system-stats'>
           <p>Manage users, departments, and system-wide settings.</p>
           <div className='quick-actions mt-3'>
-            <button className='btn btn-primary'>Manage Users</button>
-            <button className='btn btn-secondary'>Manage Departments</button>
-            <button className='btn btn-secondary'>System Reports</button>
+            <button
+              className='btn btn-primary'
+              onClick={() => {
+                navigate('/users');
+              }}
+            >
+              Manage Users
+            </button>
+            <button
+              className='btn btn-secondary'
+              onClick={() => {
+                navigate('/users');
+              }}
+            >
+              Manage Departments
+            </button>
+            <button
+              className='btn btn-secondary'
+              onClick={() => {
+                navigate('/reports');
+              }}
+            >
+              System Reports
+            </button>
           </div>
         </div>
       </Card>

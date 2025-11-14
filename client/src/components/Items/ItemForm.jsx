@@ -16,12 +16,20 @@ const ItemForm = ({ item, onSubmit, onCancel, isLoading }) => {
           name: item.name,
           category: item.category,
           description: item.description,
+          department: item.department?._id || '',
         }
       : {
           name: '',
           category: 'equipment',
           description: '',
+          department: '',
         },
+  });
+
+  // Fetch departments
+  const { data: departments } = useQuery({
+    queryKey: ['departments-for-form'],
+    queryFn: () => api.get('/api/departments').then((res) => res.data),
   });
 
   const onFormSubmit = (data) => {
@@ -30,10 +38,16 @@ const ItemForm = ({ item, onSubmit, onCancel, isLoading }) => {
       return;
     }
 
+    if (!data.department) {
+      toast.error('Department is required');
+      return;
+    }
+
     onSubmit({
       name: data.name,
       category: data.category,
       description: data.description,
+      department: data.department,
     });
   };
 
@@ -66,6 +80,24 @@ const ItemForm = ({ item, onSubmit, onCancel, isLoading }) => {
         </select>
         {errors.category && (
           <span className='form-error'>{errors.category.message}</span>
+        )}
+      </div>
+
+      <div className='form-group'>
+        <label className='form-label'>Department *</label>
+        <select
+          className='form-control'
+          {...register('department', { required: 'Department is required' })}
+        >
+          <option value=''>-- Select Department --</option>
+          {departments?.map((dept) => (
+            <option key={dept._id} value={dept._id}>
+              {dept.name} ({dept.code})
+            </option>
+          ))}
+        </select>
+        {errors.department && (
+          <span className='form-error'>{errors.department.message}</span>
         )}
       </div>
 
