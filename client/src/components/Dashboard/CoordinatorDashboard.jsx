@@ -9,8 +9,10 @@ import {
   FiClock,
   FiDollarSign,
 } from 'react-icons/fi';
+import { useNavigate } from 'react-router-dom';
 
 const CoordinatorDashboard = () => {
+  const navigate = useNavigate();
   const { data: proposals } = useQuery({
     queryKey: ['coordinator-proposals'],
     queryFn: () => api.get('/api/proposals').then((res) => res.data),
@@ -61,9 +63,30 @@ const CoordinatorDashboard = () => {
 
       <Card title='Quick Actions'>
         <div className='quick-actions'>
-          <button className='btn btn-primary'>Review Proposals</button>
-          <button className='btn btn-secondary'>Create Fund Cycle</button>
-          <button className='btn btn-secondary'>View Reports</button>
+          <button
+            className='btn btn-primary'
+            onClick={() => {
+              navigate('/proposals');
+            }}
+          >
+            Review Proposals
+          </button>
+          <button
+            className='btn btn-secondary'
+            onClick={() => {
+              navigate('/cycles');
+            }}
+          >
+            Create Fund Cycle
+          </button>
+          <button
+            className='btn btn-secondary'
+            onClick={() => {
+              navigate('/reports');
+            }}
+          >
+            View Reports
+          </button>
         </div>
       </Card>
     </div>
